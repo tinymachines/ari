@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Contributing guidelines
 - Changelog file to track changes
+- Comprehensive metadata collection for all resources
+- Amazon Resource Names (ARNs) for all resources
+- Resource relationships mapping
+- Security groups information
+- Advanced resource properties
+- Database schema extensions for new metadata fields
 
 ## [0.1.0] - 2025-04-17
 
