@@ -12,6 +12,14 @@ from typing import Dict, List, Tuple, Optional
 import logging
 import traceback
 
+# Try to import dotenv
+try:
+    from dotenv import load_dotenv
+    # Load environment variables from .env file if it exists
+    load_dotenv()
+except ImportError:
+    pass  # dotenv is optional
+
 # Enable importing from parent directory when running script directly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 

@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security groups information
 - Advanced resource properties
 - Database schema extensions for new metadata fields
+- Environment variable configuration via .env file
+- Multiple region support with comma-separated list
+- Database migration and update scripts
+- Resource limiting options
 
 ## [0.1.0] - 2025-04-17
 

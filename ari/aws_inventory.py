@@ -22,16 +22,27 @@ SERVICES_TO_CHECK = [
 
 
 class AWSInventory:
-    def __init__(self, access_key, secret_key, region='us-east-1', db_path='aws_inventory.db'):
+    def __init__(self, access_key=None, secret_key=None, region='us-east-1', db_path='aws_inventory.db', 
+                 profile=None, regions=None, services=None, max_resources=0, max_threads=5):
         self.access_key = access_key
         self.secret_key = secret_key
-        self.region = region
+        self.profile = profile
+        self.region = region  # Default region
+        self.regions = regions or [region]  # List of regions to scan
         self.db_path = db_path
-        self.session = boto3.Session(
-            aws_access_key_id=self.access_key,
-            aws_secret_access_key=self.secret_key,
-            region_name=self.region
-        )
+        self.services = services or SERVICES_TO_CHECK
+        self.max_resources = max_resources
+        self.max_threads = max_threads
+        
+        # Create session based on credentials provided
+        session_kwargs = {"region_name": self.region}
+        if access_key and secret_key:
+            session_kwargs["aws_access_key_id"] = access_key
+            session_kwargs["aws_secret_access_key"] = secret_key
+        elif profile:
+            session_kwargs["profile_name"] = profile
+            
+        self.session = boto3.Session(**session_kwargs)
         self.conn = None
         self.cursor = None
         self._account_id = None  # Cached account ID value
@@ -216,8 +227,15 @@ class AWSInventory:
         """Get all EC2 instances"""
         resources = []
         try:
-            ec2 = self.session.client('ec2')
-            regions = [region['RegionName'] for region in ec2.describe_regions()['Regions']]
+            # Use the regions from the configuration
+            # If regions is empty or None, get all available regions
+            if not self.regions:
+                ec2 = self.session.client('ec2')
+                regions = [region['RegionName'] for region in ec2.describe_regions()['Regions']]
+            else:
+                regions = self.regions
+            
+            logger.info(f"Scanning EC2 instances in regions: {', '.join(regions)}")
             
             for region in regions:
                 ec2_regional = self.session.client('ec2', region_name=region)
@@ -515,8 +533,14 @@ class AWSInventory:
         """Get all RDS instances"""
         resources = []
         try:
-            ec2 = self.session.client('ec2')
-            regions = [region['RegionName'] for region in ec2.describe_regions()['Regions']]
+            # Use the regions from the configuration
+            if not self.regions:
+                ec2 = self.session.client('ec2')
+                regions = [region['RegionName'] for region in ec2.describe_regions()['Regions']]
+            else:
+                regions = self.regions
+                
+            logger.info(f"Scanning RDS instances in regions: {', '.join(regions)}")
             
             for region in regions:
                 rds_regional = self.session.client('rds', region_name=region)
@@ -688,7 +712,14 @@ class AWSInventory:
         """Get all Lambda functions"""
         resources = []
         try:
-            regions = [region['RegionName'] for region in self.session.client('ec2').describe_regions()['Regions']]
+            # Use the regions from the configuration
+            if not self.regions:
+                ec2 = self.session.client('ec2')
+                regions = [region['RegionName'] for region in ec2.describe_regions()['Regions']]
+            else:
+                regions = self.regions
+                
+            logger.info(f"Scanning Lambda functions in regions: {', '.join(regions)}")
             
             for region in regions:
                 lambda_client = self.session.client('lambda', region_name=region)
@@ -886,7 +917,14 @@ class AWSInventory:
         """Get all DynamoDB tables"""
         resources = []
         try:
-            regions = [region['RegionName'] for region in self.session.client('ec2').describe_regions()['Regions']]
+            # Use the regions from the configuration
+            if not self.regions:
+                ec2 = self.session.client('ec2')
+                regions = [region['RegionName'] for region in ec2.describe_regions()['Regions']]
+            else:
+                regions = self.regions
+            
+            logger.info(f"Scanning DynamoDB tables in regions: {', '.join(regions)}")
             
             for region in regions:
                 dynamodb = self.session.client('dynamodb', region_name=region)
@@ -1158,19 +1196,34 @@ class AWSInventory:
             logger.info("Getting cost data from AWS Cost Explorer...")
             cost_data = self.get_cost_data()
             
+            # Determine which services to inventory
+            services_to_inventory = self.services
+            logger.info(f"Will collect inventory for {len(services_to_inventory)} services: {', '.join(services_to_inventory)}")
+            
             # Iterate through all services to check
-            for service_name in SERVICES_TO_CHECK:
+            for service_name in services_to_inventory:
                 logger.info(f"Collecting inventory for service: {service_name}")
+                
+                # Skip services that we don't have collection methods for
+                if not hasattr(self, f"get_{service_name}_resources") and not hasattr(self, f"get_{service_name.replace('-', '_')}_resources"):
+                    logger.warning(f"No collection method implemented for service: {service_name}")
+                    continue
                 
                 # Get resources for this service
                 resources = self.get_resources_by_service(service_name)
+                
+                # Apply resource limit if configured
+                if self.max_resources > 0 and len(resources) > self.max_resources:
+                    logger.info(f"Limiting {service_name} resources to {self.max_resources} (from {len(resources)})")
+                    resources = resources[:self.max_resources]
                 
                 # Update service record
                 service_id = self.update_service_record(service_name, len(resources))
                 
                 if service_id:
                     # Save each resource
-                    for resource in resources:
+                    for i, resource in enumerate(resources):
+                        logger.debug(f"Saving {service_name} resource {i+1}/{len(resources)}: {resource.get('resource_id', '')}")
                         db_resource_id = self.save_resource(service_id, resource)
                         
                         # If we have cost data for this service, save it

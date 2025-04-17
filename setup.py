@@ -30,6 +30,7 @@ setup(
         "boto3>=1.17.0",
     ],
     extras_require={
+        "dotenv": ["python-dotenv>=0.19.0"],
         "dev": [
             "pylint>=2.8.0",
             "mypy>=0.812",
